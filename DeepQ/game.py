@@ -2,6 +2,7 @@ import numpy as np
 import random
 import time
 import os
+from threading import Thread
 
 '''
 # [ 0] = ⬜"inp_nothing"          **  sente nada (tem nada na casa requisitada)
@@ -103,31 +104,121 @@ def move(map, pos, dir, command, grabbed, win):
 
 
 def infer(vecInpSens: np.int32) -> int:
+    state_ = []
+    for i in vecInpSens[:]:
+        state_.append(i.argmax())
+        if state_[-1] == 7 or state_[-1] == 10:
+            state_[-1] = 1
+        if state_[-1] == 8 or state_[-1] == 9 or state_[-1] == 11:
+            state_[-1] = 7
+
+    state_[1] = 1
+    state_ = np.array(state_)
+    state = np.zeros((3, 8))
+    for i, j in zip(state, state_):
+        i[j] = 1
+    print(state)
+
+    return [0, 1, 3, 11, 12, 13][int(input())]
     return random.choice([0, 1, 3, 11, 12, 13])
 
-def game(infer, movements):
+def game(infer, end, movements):
     map = np.array(baseMap, copy=True)
     pos = (3,3)
     energy = 500
     dir = random.choice(directions)
     win, grabbed, dead = False, False, False
+    has_gold = False
     len_movements = len(movements)
+    r = 0
     while energy >= 0:
         os.system('cls' if os.name == 'nt' else 'clear')
         vector = senseVector(map, pos, dir, movements)
-        command = infer(vector)
+        command = infer(vector, r)
         pos, dir, grabbed, win, dead = move(map, pos, dir, command, grabbed, win)
-        print_state(map, pos, dir) # remover quando for usar para treino
-        print('Energia: ', energy) # remover quando for usar para treino
-        if grabbed: print('Pegou o ouro') # remover quando for usar para treino
+        # print_state(map, pos, dir) # remover quando for usar para treino
+        # print('Energia: ', energy) # remover quando for usar para treino
+        r = 0
+        if grabbed and not has_gold:
+            print('Pegou o ouro') # remover quando for usar para treino
+            r = 50
+            has_gold = True
         energy -= len_movements
         if dead:
             print('Morreu')
+            r = -50
             break
         if win:
             print('Venceu')
+            r = 100
             break
-        time.sleep(0.1) # remover quando for usar para treino
+        #time.sleep(0.1) # remover quando for usar para treino
+    end(r)
 
-if _name_ == '_main_':
-    game(infer, ['f','l','r'])
+
+class Game(Thread):
+    def __init__(self):
+        super().__init__()
+        self.__new_action = False
+        self.__new_reward = False
+        self.done = True
+        self.action = 0
+        self.reward = 0
+        self.got_gold = False
+        self.state = 0
+
+    def infer(self, vecInpSens, reward):
+        if reward == 50 and not self.got_gold:
+            self.got_gold = True
+            self.reward = reward 
+        else:
+            self.reward = 0
+
+        state_ = []
+        for i in vecInpSens[:]:
+            state_.append(i.argmax())
+            if state_[-1] == 7 or state_[-1] == 10:
+                state_[-1] = 1
+            if state_[-1] == 8 or state_[-1] == 9 or state_[-1] == 11:
+                state_[-1] = 7
+
+        state_ = np.array(state_)
+        self.state = np.zeros((3, 8))
+        for i, j in zip(self.state, state_):
+            i[j] = 1
+            
+        self.__new_reward = True
+
+        while not self.__new_action:
+            pass
+        self.__new_action = False
+        return [0, 1, 3, 11, 12, 13][self.action]
+
+    def act(self, action):
+        self.action = action
+        self.__new_action = True
+
+    def observe(self):
+        while not self.__new_reward:
+            pass
+        self.__new_reward = False
+        return self.state, self.reward, self.done
+
+    def end(self, reward):
+        self.done = True
+        self.reward = reward
+        self.state = np.zeros((3, 8))
+        self.__new_reward = True
+
+    def run(self):
+        self.done = False
+        self.__new_action = False
+        self.__new_reward = False
+        game(self.infer, self.end, ['f', 'l', 'r'])
+
+if __name__ == '__main__':
+    game1 = Game()
+    game1.start()
+    while True:
+        print(game1.observe())
+        game1.act(int(input()))
