@@ -1,8 +1,5 @@
 import numpy as np
 import random
-import time
-import os
-from threading import Thread
 
 '''
 # [ 0] = ⬜"inp_nothing"          **  sente nada (tem nada na casa requisitada)
@@ -39,186 +36,127 @@ baseMap = np.array([
     [0,0,7,0,0,0,1,3,0,0],
     [0,0,0,0,0,0,0,0,0,0]
 ])
-directions = ['u','r','d','l']
-dir_dic = {'u' : (-1,0), 'd' : (1,0), 'l' : (0,-1), 'r' : (0,1)}
-reverse_dir_dic = {(-1, 0): 'u', (1, 0): 'd', (0, -1): 'l', (0, 1): 'r'}
+
 person_dict = {'u' : '⬆️', 'd' : '⬇️', 'l' : '⬅️', 'r' : '➡️'}
 char_vector = ['⬜','🌀','😈','✨','🏆','🏁','⬛','🦨', '✨', '✨', '🌀', '✨', '❌']
-mapped_movements = {0: 'g', 1: 'v', 3: 'f',  11: 'l', 12: 'r', 13: 'b'}
 
 def print_state(map, pos, direction):
-  for i in range(map.shape[0]):
-    for j in range(map.shape[1]):
-      if (i, j) == pos:
-        print(person_dict[direction], end='  ')
-      else:
-        print(char_vector[map[i][j]], end=' ')
-    print()
+    for i in range(map.shape[0]):
+        for j in range(map.shape[1]):
+            if (i, j) == pos:
+                print(person_dict[direction], end='  ')
+            else:
+                print(char_vector[map[i][j]], end=' ')
+        print()
 
-def sense(map, pos, dir = -1):
-  if dir == -1: return map[pos]
-
-  shape = map.shape
-  dir = dir_dic[dir]
-  dest = (pos[0] + dir[0], pos[1] + dir[1])
-
-  if dest[0] < 0 or dest[1] < 0 or shape[0] <= dest[0] or shape[1] <= dest[1]:
-    return 6
-
-  return map[dest]
-
-def senseVector(map, pos, dir, orientation):
-  vector = np.zeros((len(orientation), 13), dtype=np.int32)
-  for i in range(len(orientation)):
-    if orientation[i] == 'f':
-        vector[i][sense(map, pos, dir)] = 1
-    elif orientation[i] == 'l':
-        vector[i][sense(map, pos, directions[(directions.index(dir) - 1) % 4])] = 1
-    elif orientation[i] == 'r':
-        vector[i][sense(map, pos, directions[(directions.index(dir) + 1) % 4])] = 1
-    elif orientation[i] == 'b':
-        vector[i][sense(map, pos, directions[(directions.index(dir) + 2) % 4])] = 1
-  return vector
-
-def move(map, pos, dir, command, grabbed, win):
-  if command == 11:
-    dir = directions[directions.index(dir) - 1] 
-  elif command == 12:
-    dir = directions[(directions.index(dir) + 1) % 4]
-  elif command == 13:
-    dir = directions[(directions.index(dir) + 2) % 4]
-  elif command == 3:
-    shape = map.shape
-    calc_dir = dir_dic[dir]
-    dest = (pos[0] + calc_dir[0], pos[1] + calc_dir[1])
-    if dest[0] >= 0 and dest[1] >= 0 and shape[0] > dest[0] and shape[1] > dest[1]:
-      pos = (pos[0] + calc_dir[0], pos[1] + calc_dir[1])
-      dir = reverse_dir_dic[calc_dir];
-  elif command == 0:
-    if map[pos] == 4:
-      grabbed = True
-  elif command == 1:
-    if map[pos] == 5 and grabbed:
-      win = True
-  return pos, dir, grabbed, win, map[pos] == 2
-
-
-def infer(vecInpSens: np.int32) -> int:
-    state_ = []
-    for i in vecInpSens[:]:
-        state_.append(i.argmax())
-        if state_[-1] == 7 or state_[-1] == 10:
-            state_[-1] = 1
-        if state_[-1] == 8 or state_[-1] == 9 or state_[-1] == 11:
-            state_[-1] = 7
-
-    state_[1] = 1
-    state_ = np.array(state_)
-    state = np.zeros((3, 8))
-    for i, j in zip(state, state_):
-        i[j] = 1
-    print(state)
-
-    return [0, 1, 3, 11, 12, 13][int(input())]
-    return random.choice([0, 1, 3, 11, 12, 13])
-
-def game(infer, end, movements):
-    map = np.array(baseMap, copy=True)
-    pos = (3,3)
-    energy = 500
-    dir = random.choice(directions)
-    win, grabbed, dead = False, False, False
-    has_gold = False
-    len_movements = len(movements)
-    r = 0
-    while energy >= 0:
-        os.system('cls' if os.name == 'nt' else 'clear')
-        vector = senseVector(map, pos, dir, movements)
-        command = infer(vector, r)
-        pos, dir, grabbed, win, dead = move(map, pos, dir, command, grabbed, win)
-        # print_state(map, pos, dir) # remover quando for usar para treino
-        # print('Energia: ', energy) # remover quando for usar para treino
-        r = 0
-        if grabbed and not has_gold:
-            print('Pegou o ouro') # remover quando for usar para treino
-            r = 50
-            has_gold = True
-        energy -= len_movements
-        if dead:
-            print('Morreu')
-            r = -50
-            break
-        if win:
-            print('Venceu')
-            r = 100
-            break
-        #time.sleep(0.1) # remover quando for usar para treino
-    end(r)
-
-
-class Game(Thread):
+class Env:
     def __init__(self):
-        super().__init__()
-        self.__new_action = False
-        self.__new_reward = False
-        self.done = True
-        self.action = 0
-        self.reward = 0
-        self.got_gold = False
-        self.state = 0
+        self.directions = ['u', 'r', 'd', 'l']
+        self.dir_dic = {
+            'u': (-1, 0),
+            'd': (1, 0),
+            'l': (0, -1),
+            'r': (0, 1)
+        }
+        self.movements = ['f', 'l', 'r']
+        self.reverse_dir_dic = {
+            (-1, 0): 'u',
+            (1, 0): 'd',
+            (0, -1): 'l',
+            (0, 1): 'r'
+        }
 
-    def infer(self, vecInpSens, reward):
-        if reward == 50 and not self.got_gold:
-            self.got_gold = True
-            self.reward = reward 
-        else:
-            self.reward = 0
+        self.map: np.ndarray = None
+        self.energy: int = None
+        self.grabbed: bool = None
+        self.dir: str = None
+        self.pos: tuple[int, int] = None
 
-        state_ = []
-        for i in vecInpSens[:]:
-            state_.append(i.argmax())
-            if state_[-1] == 7 or state_[-1] == 10:
-                state_[-1] = 1
-            if state_[-1] == 8 or state_[-1] == 9 or state_[-1] == 11:
-                state_[-1] = 7
+    def start(self, table, energy=500):
+        self.map = table
+        self.energy = energy
+        self.grabbed = False
+        self.dir = random.choice(self.directions)
 
-        state_ = np.array(state_)
-        self.state = np.zeros((3, 8))
-        for i, j in zip(self.state, state_):
-            i[j] = 1
-            
-        self.__new_reward = True
+        x, y = np.where(self.map == 5)
+        self.pos = (x[0], y[0])
 
-        while not self.__new_action:
-            pass
-        self.__new_action = False
-        return [0, 1, 3, 11, 12, 13][self.action]
+        return self.sense_vector(self.movements), False
 
-    def act(self, action):
-        self.action = action
-        self.__new_action = True
+    def sense_vector(self, orientation):
+        vector = np.zeros((len(orientation), 13), dtype=np.int32)
+        for i, j in enumerate(orientation):
+            if j == 'f':
+                vector[i, self.sense(self.dir)] = 1
+            elif j == 'l':
+                vector[i, self.sense(self.directions[(self.directions.index(self.dir) - 1) % 4])] = 1
+            elif j == 'r':
+                vector[i, self.sense(self.directions[(self.directions.index(self.dir) + 1) % 4])] = 1
+            elif j == 'b':
+                vector[i, self.sense(self.directions[(self.directions.index(self.dir) + 2) % 4])] = 1
+        self.energy -= len(self.movements)
 
-    def observe(self):
-        while not self.__new_reward:
-            pass
-        self.__new_reward = False
-        return self.state, self.reward, self.done
+        return vector
 
-    def end(self, reward):
-        self.done = True
-        self.reward = reward
-        self.state = np.zeros((3, 8))
-        self.__new_reward = True
+    def sense(self, dir=None):
+        if dir is None:
+            return self.map[self.pos]
 
-    def run(self):
-        self.done = False
-        self.__new_action = False
-        self.__new_reward = False
-        game(self.infer, self.end, ['f', 'l', 'r'])
+        shape = self.map.shape
+        dir = self.dir_dic[dir]
+        dest = (self.pos[0] + dir[0], self.pos[1] + dir[1])
 
-if __name__ == '__main__':
-    game1 = Game()
-    game1.start()
-    while True:
-        print(game1.observe())
-        game1.act(int(input()))
+        if dest[0] < 0 or dest[1] < 0 or shape[0] <= dest[0] or shape[1] <= dest[1]:
+            return 6
+
+        return self.map[dest]
+
+    def move(self, command):
+        reward = 0
+        end = False
+
+        # turn
+        if command == 11:
+            self.dir = self.directions[self.directions.index(self.dir) - 1]
+        elif command == 12:
+            self.dir = self.directions[(self.directions.index(self.dir) + 1) % 4]
+        elif command == 13:
+            self.dir = self.directions[(self.directions.index(self.dir) + 2) % 4]
+
+        # forward
+        elif command == 3:
+            shape = self.map.shape
+            calc_dir = self.dir_dic[self.dir]
+            dest = (self.pos[0] + calc_dir[0], self.pos[1] + calc_dir[1])
+            if 0 <= dest[0] < shape[0] and 0 <= dest[1] < shape[1]:
+                self.pos = (self.pos[0] + calc_dir[0], self.pos[1] + calc_dir[1])
+                self.dir = self.reverse_dir_dic[calc_dir]
+
+        # grab
+        elif command == 0:
+            if self.map[self.pos] == 4:
+                if not self.grabbed:
+                    reward = 50
+                self.grabbed = True
+
+        # leave
+        elif command == 1:
+            if self.map[self.pos] == 5 and self.grabbed:
+                reward = 50
+                end = True
+
+        # check death
+        if self.map[self.pos] == 2:
+            reward = -20
+            end = True
+
+        return reward, end
+
+    def step(self, action):
+        reward, done = self.move([0, 1, 3, 11, 12, 13][action])
+        state = self.sense_vector(self.movements)
+
+        if self.energy <= 0:
+            done = True
+
+        return state, reward, done
